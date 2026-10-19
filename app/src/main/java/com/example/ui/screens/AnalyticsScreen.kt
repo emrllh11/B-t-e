@@ -67,6 +67,8 @@ fun AnalyticsScreen(
     onSetPartnerNames: (String, String) -> Unit,
     onResetDemoData: () -> Unit,
     onClearAllData: () -> Unit,
+    onLeaveFamily: () -> Unit = {},
+    onSignOut: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -318,6 +320,141 @@ fun AnalyticsScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Family Cloud Sync & Invite Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Emerald700.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(imageVector = Icons.Default.Group, contentDescription = null, tint = Emerald700, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "ORTAK BÜTÇE VE EŞ SENKRONİZASYONU",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = state.activeFamily?.name ?: "Sağlam Aile Bütçesi",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Emerald700,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = IncomeGreen.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = "🟢 Bulut Aktif",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = IncomeGreen
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Aile Paylaşım Kodu:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(
+                                text = state.activeFamily?.familyCode ?: "SAGLAM-26",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Emerald700,
+                                letterSpacing = 1.sp
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("Güvenlik Şifresi / PIN:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(
+                                text = state.activeFamily?.passcode ?: "••••",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = {
+                            val code = state.activeFamily?.familyCode ?: "SAGLAM-26"
+                            val pass = state.activeFamily?.passcode ?: "1234"
+                            val inviteText = "Sevgilim, Sağlam Aile Bütçesi ortak bütçemize katılman için kodumuz:\n" +
+                                    "🔑 Aile Kodu: $code\n" +
+                                    "🔒 Şifre: $pass\n" +
+                                    "Uygulamayı açıp 'Bütçeye Katıl' diyerek bu bilgileri girdiğinde tüm harcamalarımız ve bakiyemiz anlık eşitlenecek!"
+
+                            val intent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, inviteText)
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Eşini Aile Bütçesine Davet Et"))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Emerald700)
+                    ) {
+                        Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Eşine Aile Kodu ve Şifreyi Gönder")
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        TextButton(onClick = onLeaveFamily) {
+                            Text("Bütçe Bağlantısını Değiştir")
+                        }
+                        TextButton(onClick = onSignOut) {
+                            Text("Oturumu Kapat", color = ExpenseRed)
                         }
                     }
                 }

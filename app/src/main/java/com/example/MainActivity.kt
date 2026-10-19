@@ -8,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,10 +16,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoGraph
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ReceiptLong
@@ -33,10 +36,12 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.AddTransactionSheet
 import com.example.ui.components.ReceiptScanSheet
 import com.example.ui.screens.AnalyticsScreen
+import com.example.ui.screens.AuthAndFamilySetupScreen
 import com.example.ui.screens.BudgetsScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.TransactionsScreen
@@ -62,6 +68,9 @@ import com.example.ui.theme.Emerald700
 import com.example.ui.theme.SaglamAileButcesiTheme
 import com.example.ui.viewmodel.BudgetViewModel
 import com.example.util.configureAppCheck
+import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.auth
 import kotlinx.coroutines.launch
 
 enum class AppTab(val title: String, val icon: ImageVector) {
@@ -94,214 +103,265 @@ class MainActivity : ComponentActivity() {
                 var showScanSheet by remember { mutableStateOf(false) }
                 val scope = rememberCoroutineScope()
 
-                // Handle back press: if not in Dashboard, return to Dashboard
-                BackHandler(enabled = currentTab != AppTab.DASHBOARD) {
-                    currentTab = AppTab.DASHBOARD
+                var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
+
+                DisposableEffect(Unit) {
+                    val listener = FirebaseAuth.AuthStateListener { auth ->
+                        currentUser = auth.currentUser
+                    }
+                    Firebase.auth.addAuthStateListener(listener)
+                    onDispose {
+                        Firebase.auth.removeAuthStateListener(listener)
+                    }
                 }
 
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    topBar = {
-                        CenterAlignedTopAppBar(
-                            title = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .clip(CircleShape)
-                                            .background(Emerald700.copy(alpha = 0.15f)),
-                                        contentAlignment = Alignment.Center
+                // If user is not authenticated OR not connected to a family budget, gate with setup screen
+                if (currentUser == null || uiState.activeFamily == null) {
+                    AuthAndFamilySetupScreen(
+                        currentUser = currentUser,
+                        onAuthSuccess = { currentUser = Firebase.auth.currentUser },
+                        onCreateFamily = { name, code, passcode, myName, partnerName ->
+                            viewModel.createFamily(name, code, passcode, myName, partnerName)
+                        },
+                        onJoinFamily = { code, passcode, myName ->
+                            viewModel.joinFamily(code, passcode, myName)
+                        },
+                        errorMessage = uiState.familyError
+                    )
+                } else {
+                    // Authenticated & Connected to Shared Family Budget!
+                    BackHandler(enabled = currentTab != AppTab.DASHBOARD) {
+                        currentTab = AppTab.DASHBOARD
+                    }
+
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        topBar = {
+                            CenterAlignedTopAppBar(
+                                title = {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(24.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Emerald700.copy(alpha = 0.15f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Favorite,
+                                                    contentDescription = null,
+                                                    tint = Emerald700,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "SAĞLAM AİLE BÜTÇESİ",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                letterSpacing = 0.5.sp
+                                            )
+                                        }
+
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.CloudDone,
+                                                contentDescription = "Bulut Senkronize",
+                                                tint = Emerald700,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Canlı Eş Senkronizasyonu (${uiState.activeFamily?.familyCode})",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Emerald700,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                },
+                                actions = {
+                                    IconButton(
+                                        onClick = { showScanSheet = true },
+                                        modifier = Modifier.testTag("topbar_ai_scan_receipt")
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Favorite,
-                                            contentDescription = null,
-                                            tint = Emerald700,
-                                            modifier = Modifier.size(16.dp)
+                                            imageVector = Icons.Default.AutoAwesome,
+                                            contentDescription = "Yapay Zeka ile Fiş Tara",
+                                            tint = Emerald700
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "SAĞLAM AİLE BÜTÇESİ",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        letterSpacing = 0.5.sp
-                                    )
-                                }
-                            },
-                            actions = {
-                                IconButton(
-                                    onClick = { showScanSheet = true },
-                                    modifier = Modifier.testTag("topbar_ai_scan_receipt")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AutoAwesome,
-                                        contentDescription = "Yapay Zeka ile Fiş Tara",
-                                        tint = Emerald700
-                                    )
-                                }
-                            },
-                            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surface
+                                },
+                                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                )
                             )
-                        )
-                    },
-                    bottomBar = {
-                        NavigationBar(
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 6.dp
+                        },
+                        bottomBar = {
+                            NavigationBar(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                tonalElevation = 6.dp
+                            ) {
+                                AppTab.entries.forEach { tab ->
+                                    val selected = currentTab == tab
+                                    NavigationBarItem(
+                                        selected = selected,
+                                        onClick = { currentTab = tab },
+                                        icon = {
+                                            Icon(
+                                                imageVector = tab.icon,
+                                                contentDescription = tab.title
+                                            )
+                                        },
+                                        label = {
+                                            Text(
+                                                text = tab.title,
+                                                fontSize = 11.sp,
+                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        colors = NavigationBarItemDefaults.colors(
+                                            selectedIconColor = Emerald700,
+                                            selectedTextColor = Emerald700,
+                                            indicatorColor = Emerald700.copy(alpha = 0.15f)
+                                        ),
+                                        modifier = Modifier.testTag("nav_tab_${tab.name.lowercase()}")
+                                    )
+                                }
+                            }
+                        },
+                        floatingActionButton = {
+                            ExtendedFloatingActionButton(
+                                onClick = { showAddSheet = true },
+                                containerColor = Emerald700,
+                                contentColor = Color.White,
+                                icon = { Icon(imageVector = Icons.Default.Add, contentDescription = null) },
+                                text = { Text("İşlem Ekle", fontWeight = FontWeight.Bold) },
+                                modifier = Modifier.testTag("fab_add_transaction")
+                            )
+                        }
+                    ) { innerPadding ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
                         ) {
-                            AppTab.entries.forEach { tab ->
-                                val selected = currentTab == tab
-                                NavigationBarItem(
-                                    selected = selected,
-                                    onClick = { currentTab = tab },
-                                    icon = {
-                                        Icon(
-                                            imageVector = tab.icon,
-                                            contentDescription = tab.title
-                                        )
-                                    },
-                                    label = {
-                                        Text(
-                                            text = tab.title,
-                                            fontSize = 11.sp,
-                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    },
-                                    colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = Emerald700,
-                                        selectedTextColor = Emerald700,
-                                        indicatorColor = Emerald700.copy(alpha = 0.15f)
-                                    ),
-                                    modifier = Modifier.testTag("nav_tab_${tab.name.lowercase()}")
-                                )
+                            when (currentTab) {
+                                AppTab.DASHBOARD -> {
+                                    DashboardScreen(
+                                        state = uiState,
+                                        onPreviousMonth = { viewModel.selectPreviousMonth() },
+                                        onNextMonth = { viewModel.selectNextMonth() },
+                                        onCurrentMonth = { viewModel.selectCurrentMonth() },
+                                        onSeeAllTransactions = { currentTab = AppTab.TRANSACTIONS },
+                                        onDeleteTransaction = { viewModel.deleteTransaction(it) },
+                                        onScanReceipt = { showScanSheet = true }
+                                    )
+                                }
+
+                                AppTab.TRANSACTIONS -> {
+                                    TransactionsScreen(
+                                        state = uiState,
+                                        onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                                        onTypeFilterChange = { viewModel.setTypeFilter(it) },
+                                        onSpenderFilterChange = { viewModel.setSpenderFilter(it) },
+                                        onCategoryFilterChange = { viewModel.setCategoryFilter(it) },
+                                        onDeleteTransaction = { viewModel.deleteTransaction(it) }
+                                    )
+                                }
+
+                                AppTab.BUDGETS -> {
+                                    BudgetsScreen(
+                                        state = uiState,
+                                        onSetCategoryLimit = { cat, limit -> viewModel.setCategoryLimit(cat, limit) },
+                                        onAddSavingsGoal = { title, target, initial -> viewModel.addSavingsGoal(title, target, initial) },
+                                        onAdjustGoalAmount = { goal, delta -> viewModel.adjustGoalAmount(goal, delta) },
+                                        onDeleteSavingsGoal = { viewModel.deleteSavingsGoal(it) },
+                                        onAddRecurringBill = { title, amount, day, spender -> viewModel.addRecurringBill(title, amount, day, spender) },
+                                        onToggleBillPaid = { viewModel.toggleBillPaid(it) },
+                                        onDeleteRecurringBill = { viewModel.deleteRecurringBill(it) }
+                                    )
+                                }
+
+                                AppTab.ANALYTICS -> {
+                                    AnalyticsScreen(
+                                        state = uiState,
+                                        onSetPartnerNames = { name1, name2 -> viewModel.setPartnerNames(name1, name2) },
+                                        onResetDemoData = { viewModel.resetToDemoData() },
+                                        onClearAllData = { viewModel.clearAllTransactions() },
+                                        onLeaveFamily = { viewModel.leaveFamily() },
+                                        onSignOut = {
+                                            Firebase.auth.signOut()
+                                            viewModel.leaveFamily()
+                                        }
+                                    )
+                                }
                             }
                         }
-                    },
-                    floatingActionButton = {
-                        ExtendedFloatingActionButton(
-                            onClick = { showAddSheet = true },
-                            containerColor = Emerald700,
-                            contentColor = Color.White,
-                            icon = { Icon(imageVector = Icons.Default.Add, contentDescription = null) },
-                            text = { Text("İşlem Ekle", fontWeight = FontWeight.Bold) },
-                            modifier = Modifier.testTag("fab_add_transaction")
-                        )
-                    }
-                ) { innerPadding ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                    ) {
-                        when (currentTab) {
-                            AppTab.DASHBOARD -> {
-                                DashboardScreen(
-                                    state = uiState,
-                                    onPreviousMonth = { viewModel.selectPreviousMonth() },
-                                    onNextMonth = { viewModel.selectNextMonth() },
-                                    onCurrentMonth = { viewModel.selectCurrentMonth() },
-                                    onSeeAllTransactions = { currentTab = AppTab.TRANSACTIONS },
-                                    onDeleteTransaction = { viewModel.deleteTransaction(it) },
-                                    onScanReceipt = { showScanSheet = true }
-                                )
-                            }
 
-                            AppTab.TRANSACTIONS -> {
-                                TransactionsScreen(
-                                    state = uiState,
-                                    onSearchQueryChange = { viewModel.setSearchQuery(it) },
-                                    onTypeFilterChange = { viewModel.setTypeFilter(it) },
-                                    onSpenderFilterChange = { viewModel.setSpenderFilter(it) },
-                                    onCategoryFilterChange = { viewModel.setCategoryFilter(it) },
-                                    onDeleteTransaction = { viewModel.deleteTransaction(it) }
-                                )
-                            }
-
-                            AppTab.BUDGETS -> {
-                                BudgetsScreen(
-                                    state = uiState,
-                                    onSetCategoryLimit = { cat, limit -> viewModel.setCategoryLimit(cat, limit) },
-                                    onAddSavingsGoal = { title, target, initial -> viewModel.addSavingsGoal(title, target, initial) },
-                                    onAdjustGoalAmount = { goal, delta -> viewModel.adjustGoalAmount(goal, delta) },
-                                    onDeleteSavingsGoal = { viewModel.deleteSavingsGoal(it) },
-                                    onAddRecurringBill = { title, amount, day, spender -> viewModel.addRecurringBill(title, amount, day, spender) },
-                                    onToggleBillPaid = { viewModel.toggleBillPaid(it) },
-                                    onDeleteRecurringBill = { viewModel.deleteRecurringBill(it) }
-                                )
-                            }
-
-                            AppTab.ANALYTICS -> {
-                                AnalyticsScreen(
-                                    state = uiState,
-                                    onSetPartnerNames = { name1, name2 -> viewModel.setPartnerNames(name1, name2) },
-                                    onResetDemoData = { viewModel.resetToDemoData() },
-                                    onClearAllData = { viewModel.clearAllTransactions() }
-                                )
-                            }
+                        // Add Transaction Bottom Sheet
+                        if (showAddSheet) {
+                            AddTransactionSheet(
+                                partner1Name = uiState.partner1Name,
+                                partner2Name = uiState.partner2Name,
+                                sheetState = addSheetState,
+                                onDismiss = {
+                                    scope.launch { addSheetState.hide() }.invokeOnCompletion {
+                                        showAddSheet = false
+                                    }
+                                },
+                                onScanReceipt = {
+                                    scope.launch { addSheetState.hide() }.invokeOnCompletion {
+                                        showAddSheet = false
+                                        showScanSheet = true
+                                    }
+                                },
+                                onSave = { title, amount, type, category, spender, method, note ->
+                                    viewModel.addTransaction(
+                                        title = title,
+                                        amount = amount,
+                                        type = type,
+                                        category = category,
+                                        spender = spender,
+                                        paymentMethod = method,
+                                        note = note
+                                    )
+                                    scope.launch { addSheetState.hide() }.invokeOnCompletion {
+                                        showAddSheet = false
+                                    }
+                                }
+                            )
                         }
-                    }
 
-                    // Add Transaction Bottom Sheet
-                    if (showAddSheet) {
-                        AddTransactionSheet(
-                            partner1Name = uiState.partner1Name,
-                            partner2Name = uiState.partner2Name,
-                            sheetState = addSheetState,
-                            onDismiss = {
-                                scope.launch { addSheetState.hide() }.invokeOnCompletion {
-                                    showAddSheet = false
+                        // AI Receipt Scan Bottom Sheet
+                        if (showScanSheet) {
+                            ReceiptScanSheet(
+                                partner1Name = uiState.partner1Name,
+                                partner2Name = uiState.partner2Name,
+                                sheetState = scanSheetState,
+                                onDismiss = {
+                                    scope.launch { scanSheetState.hide() }.invokeOnCompletion {
+                                        showScanSheet = false
+                                    }
+                                },
+                                onSaveTransaction = { title, amount, type, category, spender, method, note ->
+                                    viewModel.addTransaction(
+                                        title = title,
+                                        amount = amount,
+                                        type = type,
+                                        category = category,
+                                        spender = spender,
+                                        paymentMethod = method,
+                                        note = note
+                                    )
+                                    scope.launch { scanSheetState.hide() }.invokeOnCompletion {
+                                        showScanSheet = false
+                                    }
                                 }
-                            },
-                            onScanReceipt = {
-                                scope.launch { addSheetState.hide() }.invokeOnCompletion {
-                                    showAddSheet = false
-                                    showScanSheet = true
-                                }
-                            },
-                            onSave = { title, amount, type, category, spender, method, note ->
-                                viewModel.addTransaction(
-                                    title = title,
-                                    amount = amount,
-                                    type = type,
-                                    category = category,
-                                    spender = spender,
-                                    paymentMethod = method,
-                                    note = note
-                                )
-                                scope.launch { addSheetState.hide() }.invokeOnCompletion {
-                                    showAddSheet = false
-                                }
-                            }
-                        )
-                    }
-
-                    // AI Receipt Scan Bottom Sheet
-                    if (showScanSheet) {
-                        ReceiptScanSheet(
-                            partner1Name = uiState.partner1Name,
-                            partner2Name = uiState.partner2Name,
-                            sheetState = scanSheetState,
-                            onDismiss = {
-                                scope.launch { scanSheetState.hide() }.invokeOnCompletion {
-                                    showScanSheet = false
-                                }
-                            },
-                            onSaveTransaction = { title, amount, type, category, spender, method, note ->
-                                viewModel.addTransaction(
-                                    title = title,
-                                    amount = amount,
-                                    type = type,
-                                    category = category,
-                                    spender = spender,
-                                    paymentMethod = method,
-                                    note = note
-                                )
-                                scope.launch { scanSheetState.hide() }.invokeOnCompletion {
-                                    showScanSheet = false
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }

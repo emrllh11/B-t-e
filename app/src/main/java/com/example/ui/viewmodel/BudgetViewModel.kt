@@ -1,10 +1,12 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.BudgetDatabase
 import com.example.data.model.BudgetLimitEntity
+import com.example.data.model.FamilyBudgetDoc
 import com.example.data.model.PaymentMethod
 import com.example.data.model.RecurringBillEntity
 import com.example.data.model.SavingsGoalEntity
@@ -12,12 +14,18 @@ import com.example.data.model.TransactionCategory
 import com.example.data.model.TransactionEntity
 import com.example.data.model.TransactionType
 import com.example.data.repository.BudgetRepository
+import com.example.data.repository.FirebaseBudgetRepository
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -45,9 +53,12 @@ data class DailySpendPoint(
 
 data class BudgetUiState(
     val selectedYear: Int = Calendar.getInstance().get(Calendar.YEAR),
-    val selectedMonth: Int = Calendar.getInstance().get(Calendar.MONTH), // 0-based (Calendar.MONTH)
+    val selectedMonth: Int = Calendar.getInstance().get(Calendar.MONTH), // 0-based
     val partner1Name: String = "Ben",
     val partner2Name: String = "Eşim",
+    val activeFamily: FamilyBudgetDoc? = null,
+    val isFamilyConnected: Boolean = false,
+    val familyError: String? = null,
     val transactions: List<TransactionEntity> = emptyList(),
     val totalIncome: Double = 0.0,
     val totalExpense: Double = 0.0,
@@ -76,10 +87,14 @@ data class BudgetUiState(
 
 class BudgetViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository: BudgetRepository
+    private val localRepository: BudgetRepository
+    private val firebaseRepository: FirebaseBudgetRepository
+    private val prefs = application.getSharedPreferences("family_budget_prefs", Context.MODE_PRIVATE)
 
     // State holders
     private val _selectedCalendar = MutableStateFlow(Calendar.getInstance())
+    private val _activeFamilyId = MutableStateFlow<String?>(prefs.getString("active_family_id", null))
+    private val _familyError = MutableStateFlow<String?>(null)
     private val _partner1Name = MutableStateFlow("Ben")
     private val _partner2Name = MutableStateFlow("Eşim")
     private val _searchQuery = MutableStateFlow("")
@@ -89,16 +104,33 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         val db = BudgetDatabase.getDatabase(application)
-        repository = BudgetRepository(db.budgetDao())
+        localRepository = BudgetRepository(db.budgetDao())
+        firebaseRepository = FirebaseBudgetRepository(application, localRepository)
 
-        // Prepopulate demo data on first launch to deliver immediate rich graphics
+        // Prepopulate demo data on first launch
         viewModelScope.launch {
-            repository.seedInitialDataIfEmpty(_partner1Name.value, _partner2Name.value)
+            localRepository.seedInitialDataIfEmpty(_partner1Name.value, _partner2Name.value)
         }
     }
 
+    // Active Family Document Flow (from Firestore if connected)
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val periodTransactions = _selectedCalendar.flatMapLatest { cal ->
+    private val activeFamilyFlow: Flow<FamilyBudgetDoc?> = _activeFamilyId.flatMapLatest { familyId ->
+        if (familyId != null && Firebase.auth.currentUser != null) {
+            firebaseRepository.observeFamilyBudget(familyId)
+        } else {
+            flowOf(null)
+        }
+    }
+
+    // Real-time Transactions: Streams from Firestore if a family budget is linked, or fallback to Room
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val periodTransactions: Flow<List<TransactionEntity>> = combine(
+        _selectedCalendar,
+        _activeFamilyId
+    ) { cal, familyId ->
+        cal to familyId
+    }.flatMapLatest { (cal, familyId) ->
         val startCal = cal.clone() as Calendar
         startCal.set(Calendar.DAY_OF_MONTH, 1)
         startCal.set(Calendar.HOUR_OF_DAY, 0)
@@ -113,12 +145,18 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         endCal.set(Calendar.SECOND, 59)
         endCal.set(Calendar.MILLISECOND, 999)
 
-        repository.getTransactionsForPeriod(startCal.timeInMillis, endCal.timeInMillis)
+        if (familyId != null && Firebase.auth.currentUser != null) {
+            firebaseRepository.observeFamilyTransactions(familyId).map { list ->
+                list.filter { it.timestamp in startCal.timeInMillis..endCal.timeInMillis }
+            }
+        } else {
+            localRepository.getTransactionsForPeriod(startCal.timeInMillis, endCal.timeInMillis)
+        }
     }
 
-    private val budgetLimits = repository.getAllBudgetLimits()
-    private val savingsGoals = repository.getAllSavingsGoals()
-    private val recurringBills = repository.getAllRecurringBills()
+    private val budgetLimits = localRepository.getAllBudgetLimits()
+    private val savingsGoals = localRepository.getAllSavingsGoals()
+    private val recurringBills = localRepository.getAllRecurringBills()
 
     val uiState: StateFlow<BudgetUiState> = combine(
         _selectedCalendar,
@@ -126,24 +164,28 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         budgetLimits,
         savingsGoals,
         recurringBills,
+        activeFamilyFlow,
         _partner1Name,
         _partner2Name,
         _searchQuery,
         _selectedTypeFilter,
         _selectedSpenderFilter,
-        _selectedCategoryFilter
+        _selectedCategoryFilter,
+        _familyError
     ) { args ->
         val cal = args[0] as Calendar
         val transactions = args[1] as List<TransactionEntity>
         val limits = args[2] as List<BudgetLimitEntity>
         val goals = args[3] as List<SavingsGoalEntity>
         val bills = args[4] as List<RecurringBillEntity>
-        val p1Name = args[5] as String
-        val p2Name = args[6] as String
-        val query = args[7] as String
-        val typeFilter = args[8] as TransactionType?
-        val spenderFilter = args[9] as String?
-        val categoryFilter = args[10] as TransactionCategory?
+        val activeFamily = args[5] as FamilyBudgetDoc?
+        val p1Name = activeFamily?.spouse1Name ?: (args[6] as String)
+        val p2Name = activeFamily?.spouse2Name ?: (args[7] as String)
+        val query = args[8] as String
+        val typeFilter = args[9] as TransactionType?
+        val spenderFilter = args[10] as String?
+        val categoryFilter = args[11] as TransactionCategory?
+        val familyErr = args[12] as String?
 
         // Filter transactions for search and chips
         val filteredTransactions = transactions.filter { tx ->
@@ -228,6 +270,9 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
             selectedMonth = cal.get(Calendar.MONTH),
             partner1Name = p1Name,
             partner2Name = p2Name,
+            activeFamily = activeFamily,
+            isFamilyConnected = activeFamily != null,
+            familyError = familyErr,
             transactions = filteredTransactions,
             totalIncome = incomeTotal,
             totalExpense = expenseTotal,
@@ -250,6 +295,54 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = BudgetUiState(isLoading = true)
     )
+
+    // Family Creation & Joint Sharing
+    fun createFamily(
+        name: String,
+        code: String,
+        passcode: String,
+        myName: String,
+        partnerName: String
+    ) {
+        viewModelScope.launch {
+            _familyError.value = null
+            try {
+                val family = firebaseRepository.createFamilyBudget(
+                    name = name,
+                    familyCode = code,
+                    passcode = passcode,
+                    mySpouseName = myName,
+                    partnerSpouseName = partnerName
+                )
+                prefs.edit().putString("active_family_id", family.id).apply()
+                _activeFamilyId.value = family.id
+            } catch (e: Exception) {
+                _familyError.value = e.localizedMessage ?: "Aile bütçesi oluşturulamadı."
+            }
+        }
+    }
+
+    fun joinFamily(code: String, passcode: String, myName: String) {
+        viewModelScope.launch {
+            _familyError.value = null
+            try {
+                val family = firebaseRepository.joinFamilyBudget(
+                    familyCode = code,
+                    passcode = passcode,
+                    myName = myName
+                )
+                prefs.edit().putString("active_family_id", family.id).apply()
+                _activeFamilyId.value = family.id
+            } catch (e: Exception) {
+                _familyError.value = e.localizedMessage ?: "Aile bütçesine bağlanılamadı."
+            }
+        }
+    }
+
+    fun leaveFamily() {
+        prefs.edit().remove("active_family_id").apply()
+        _activeFamilyId.value = null
+    }
 
     // Month navigation
     fun selectPreviousMonth() {
@@ -290,7 +383,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         _partner2Name.value = name2.ifBlank { "Eşim" }
     }
 
-    // CRUD Transactions
+    // CRUD Transactions with Real-time Cloud Sync
     fun addTransaction(
         title: String,
         amount: Double,
@@ -302,36 +395,62 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         note: String = ""
     ) {
         viewModelScope.launch {
-            val entity = TransactionEntity(
-                title = title.trim(),
-                amount = amount,
-                type = type,
-                category = category,
-                spender = spender,
-                timestamp = timestamp,
-                paymentMethod = paymentMethod,
-                note = note.trim()
-            )
-            repository.insertTransaction(entity)
-        }
-    }
-
-    fun updateTransaction(transaction: TransactionEntity) {
-        viewModelScope.launch {
-            repository.updateTransaction(transaction)
+            val familyId = _activeFamilyId.value
+            if (familyId != null && Firebase.auth.currentUser != null) {
+                try {
+                    firebaseRepository.addTransaction(
+                        familyId = familyId,
+                        title = title,
+                        amount = amount,
+                        type = type,
+                        category = category,
+                        spender = spender,
+                        timestamp = timestamp,
+                        paymentMethod = paymentMethod,
+                        note = note
+                    )
+                } catch (e: Exception) {
+                    // Fallback to local if network error
+                    localRepository.insertTransaction(
+                        TransactionEntity(
+                            title = title,
+                            amount = amount,
+                            type = type,
+                            category = category,
+                            spender = spender,
+                            timestamp = timestamp,
+                            paymentMethod = paymentMethod,
+                            note = note
+                        )
+                    )
+                }
+            } else {
+                localRepository.insertTransaction(
+                    TransactionEntity(
+                        title = title,
+                        amount = amount,
+                        type = type,
+                        category = category,
+                        spender = spender,
+                        timestamp = timestamp,
+                        paymentMethod = paymentMethod,
+                        note = note
+                    )
+                )
+            }
         }
     }
 
     fun deleteTransaction(transaction: TransactionEntity) {
         viewModelScope.launch {
-            repository.deleteTransaction(transaction)
+            localRepository.deleteTransaction(transaction)
         }
     }
 
     // Budgets & Goals
     fun setCategoryLimit(category: TransactionCategory, limit: Double) {
         viewModelScope.launch {
-            repository.setBudgetLimit(category, limit)
+            localRepository.setBudgetLimit(category, limit)
         }
     }
 
@@ -343,7 +462,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
                 currentAmount = initialDeposit,
                 icon = "savings"
             )
-            repository.insertSavingsGoal(goal)
+            localRepository.insertSavingsGoal(goal)
         }
     }
 
@@ -352,13 +471,13 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
             val updated = goal.copy(
                 currentAmount = (goal.currentAmount + delta).coerceAtLeast(0.0)
             )
-            repository.updateSavingsGoal(updated)
+            localRepository.updateSavingsGoal(updated)
         }
     }
 
     fun deleteSavingsGoal(goal: SavingsGoalEntity) {
         viewModelScope.launch {
-            repository.deleteSavingsGoal(goal)
+            localRepository.deleteSavingsGoal(goal)
         }
     }
 
@@ -372,32 +491,32 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
                 isPaid = false,
                 spender = spender
             )
-            repository.insertRecurringBill(bill)
+            localRepository.insertRecurringBill(bill)
         }
     }
 
     fun toggleBillPaid(bill: RecurringBillEntity) {
         viewModelScope.launch {
-            repository.toggleBillPaid(bill.id, !bill.isPaid)
+            localRepository.toggleBillPaid(bill.id, !bill.isPaid)
         }
     }
 
     fun deleteRecurringBill(bill: RecurringBillEntity) {
         viewModelScope.launch {
-            repository.deleteRecurringBill(bill)
+            localRepository.deleteRecurringBill(bill)
         }
     }
 
     fun resetToDemoData() {
         viewModelScope.launch {
-            repository.clearAllTransactions()
-            repository.seedInitialDataIfEmpty(_partner1Name.value, _partner2Name.value)
+            localRepository.clearAllTransactions()
+            localRepository.seedInitialDataIfEmpty(_partner1Name.value, _partner2Name.value)
         }
     }
 
     fun clearAllTransactions() {
         viewModelScope.launch {
-            repository.clearAllTransactions()
+            localRepository.clearAllTransactions()
         }
     }
 }

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SaglamAileButcesiSchema",
+  "description": "Firestore schema for Saglam Aile Butcesi real-time joint budget sharing",
+  "collections": {
+    "familyBudgets": {
+      "description": "Joint family budget spaces shared between spouses",
+      "document": {
+        "type": "object",
+        "required": ["id", "name", "familyCode", "passcode", "memberUids", "spouse1Name", "spouse2Name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "familyCode": { "type": "string" },
+          "passcode": { "type": "string" },
+          "memberUids": { "type": "array", "items": { "type": "string" } },
+          "spouse1Name": { "type": "string" },
+          "spouse2Name": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "subcollections": {
+        "transactions": {
+          "description": "Income and expense transactions synced in real-time between spouses",
+          "document": {
+            "type": "object",
+            "required": ["id", "familyId", "title", "amount", "type", "category", "spender", "timestamp"],
+            "properties": {
+              "id": { "type": "string" },
+              "familyId": { "type": "string" },
+              "title": { "type": "string" },
+              "amount": { "type": "number" },
+              "type": { "type": "string", "enum": ["EXPENSE", "INCOME"] },
+              "category": { "type": "string" },
+              "spender": { "type": "string" },
+              "createdByUid": { "type": "string" },
+              "createdByName": { "type": "string" },
+              "timestamp": { "type": "number" },
+              "paymentMethod": { "type": "string" },
+              "note": { "type": "string" },
+              "createdAt": { "type": "string", "format": "date-time" },
+              "updatedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "budgetLimits": {
+          "description": "Category budget limits shared across spouses",
+          "document": {
+            "type": "object",
+            "required": ["categoryName", "monthlyLimit"],
+            "properties": {
+              "categoryName": { "type": "string" },
+              "monthlyLimit": { "type": "number" },
+              "updatedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "savingsGoals": {
+          "description": "Shared piggy banks and savings goals",
+          "document": {
+            "type": "object",
+            "required": ["id", "title", "targetAmount", "currentAmount"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "targetAmount": { "type": "number" },
+              "currentAmount": { "type": "number" },
+              "icon": { "type": "string" },
+              "updatedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "recurringBills": {
+          "description": "Shared recurring bills and subscriptions",
+          "document": {
+            "type": "object",
+            "required": ["id", "title", "amount", "dueDay", "isPaid", "spender"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "amount": { "type": "number" },
+              "dueDay": { "type": "number" },
+              "isPaid": { "type": "boolean" },
+              "spender": { "type": "string" },
+              "updatedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
