@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="1.0"
+        android:scaleY="1.0"
+        android:pivotX="54"
+        android:pivotY="54">
+        <!-- Soft drop shadow -->
+        <path
+            android:pathData="M30,44 C30,39.6 33.6,36 38,36 L70,36 C74.4,36 78,39.6 78,44 L78,70 C78,74.4 74.4,78 70,78 L38,78 C33.6,78 30,74.4 30,70 Z"
+            android:fillColor="#33000000" />
+            
+        <!-- Main Wallet / Safe Body -->
+        <path
+            android:pathData="M28,42 C28,37.6 31.6,34 36,34 L68,34 C72.4,34 76,37.6 76,42 L76,68 C76,72.4 72.4,76 68,76 L36,76 C31.6,76 28,72.4 28,68 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="28"
+                    android:startY="34"
+                    android:endX="76"
+                    android:endY="76"
+                    android:type="linear">
+                    <item android:offset="0.0" android:color="#FFFFFF" />
+                    <item android:offset="1.0" android:color="#E0E7FF" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- Top Wallet Flap / Card Accent -->
+        <path
+            android:pathData="M32,38 L72,38 C73.1,38 74,38.9 74,40 L74,45 L30,45 L30,40 C30,38.9 30.9,38 32,38 Z"
+            android:fillColor="#10B981" />
+
+        <!-- Gold Coin / Piggy badge popping out -->
+        <path
+            android:pathData="M54,23 M42,27 C42,22 46,18 51,18 C57,18 61,22 61,27 C61,32 57,36 51,36 C46,36 42,32 42,27 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="42"
+                    android:startY="18"
+                    android:endX="61"
+                    android:endY="36"
+                    android:type="linear">
+                    <item android:offset="0.0" android:color="#FCD34D" />
+                    <item android:offset="1.0" android:color="#F59E0B" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        
+        <!-- Turkish Lira / Currency Notch inside coin -->
+        <path
+            android:pathData="M48,23 L54,23 M48,26 L53,26 M50,21 L50,32 C52,32 54.5,31.2 55.5,29"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="1.6"
+            android:strokeLineCap="round" />
+
+        <!-- Family Double Heart (Couple / Sağlam Aile) in center of wallet -->
+        <!-- Heart 1 (Left / Husband/Wife) -->
+        <path
+            android:pathData="M47,56 C44,53 40,55 40,58 C40,61 45,65 47,67 C49,65 54,61 54,58 C54,55 50,53 47,56 Z"
+            android:fillColor="#059669" />
+
+        <!-- Heart 2 (Right overlapping / Spouse) -->
+        <path
+            android:pathData="M57,56 C54,53 50,55 50,58 C50,61 55,65 57,67 C59,65 64,61 64,58 C64,55 60,53 57,56 Z"
+            android:fillColor="#10B981" />
+
+        <!-- Clasp / Lock button -->
+        <path
+            android:pathData="M70,55 C70,52.8 71.8,51 74,51 L78,51 C80.2,51 82,52.8 82,55 L82,59 C82,61.2 80.2,63 78,63 L74,63 C71.8,63 70,61.2 70,59 Z"
+            android:fillColor="#F59E0B" />
+        <path
+            android:pathData="M74,57 A1.5,1.5 0 1,1 77,57 A1.5,1.5 0 1,1 74,57"
+            android:fillColor="#FFFFFF" />
+    </group>
+</vector>
